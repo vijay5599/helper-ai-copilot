@@ -5,6 +5,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 import websockets
+from prompts import get_system_prompt
 
 load_dotenv()
 
@@ -85,14 +86,8 @@ async def copilot_endpoint(websocket: WebSocket):
                             }))
                             continue
 
-                        system_message = (
-                            f"You are a highly skilled AI assistant acting as an elite software engineering interview copilot. "
-                            f"Target Job Role: {job_role if job_role else 'General/Not provided'}\n"
-                            f"Candidate Resume: {resume_ctx if resume_ctx else 'Not provided'}\n\n"
-                            f"INSTRUCTIONS:\n"
-                            f"1. Be concise, practical, and directly answer the question.\n"
-                            f"2. IF AN IMAGE IS PROVIDED AND IT CONTAINS A CODING CHALLENGE (e.g. LeetCode, HackerRank, IDE): IMMEDIATELY write the complete, optimal, and bug-free code solution to the problem in the language requested or shown on screen. Do not just explain it—provide the code first. Follow the code with a very brief explanation of the Time and Space Complexity."
-                        )
+                        # Use v3 (the latest structured prompt version)
+                        system_message = get_system_prompt("v3", job_role, resume_ctx)
 
                         user_content = []
                         if context_buffer.strip():
