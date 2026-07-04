@@ -86,8 +86,8 @@ async def copilot_endpoint(websocket: WebSocket):
                             }))
                             continue
 
-                        # Use v3 (the latest structured prompt version)
-                        system_message = get_system_prompt("v3", job_role, resume_ctx)
+                        # Use v5 (Candidate Roleplay / Script Mode)
+                        system_message = get_system_prompt("v5", job_role, resume_ctx)
 
                         user_content = []
                         if context_buffer.strip():
