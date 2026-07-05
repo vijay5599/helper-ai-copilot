@@ -2,11 +2,19 @@ import os
 import json
 import asyncio
 import time
+import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 import websockets
 from prompts import get_system_prompt
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger("HelperAI")
 
 load_dotenv()
 
@@ -22,7 +30,7 @@ def read_root():
 async def copilot_endpoint(websocket: WebSocket):
     await websocket.accept()
     context_buffer = ""
-    print("Client connected to WebSocket")
+    logger.info("Client connected to WebSocket")
     # Using nova-2 with domain-specific keywords to heavily boost recognition of tech jargon
     keywords = "&keywords=multithreading:2&keywords=backend:2&keywords=frontend:2&keywords=LLM:2&keywords=RAG:2&keywords=API:2&keywords=React:2"
     deepgram_url = f"wss://api.deepgram.com/v1/listen?model=nova-2&language=en-IN&smart_format=true&keepalive=true{keywords}"
@@ -32,7 +40,7 @@ async def copilot_endpoint(websocket: WebSocket):
             deepgram_url, 
             additional_headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"}
         ) as dg_ws:
-            print("Connected to Deepgram API directly")
+            logger.info("Connected to Deepgram API directly")
             
             async def receiver():
                 nonlocal context_buffer
@@ -44,7 +52,7 @@ async def copilot_endpoint(websocket: WebSocket):
                             sentence = msg["channel"]["alternatives"][0].get("transcript", "")
                             
                             if sentence and is_final:
-                                print(f"Deepgram transcript (final): {sentence}")
+                                logger.info(f"Deepgram transcript (final): {sentence}")
                                 context_buffer += sentence + " "
                                 await websocket.send_text(json.dumps({
                                     "type": "transcript",
@@ -57,9 +65,9 @@ async def copilot_endpoint(websocket: WebSocket):
                                     "text": context_buffer + sentence
                                 }))
                         else:
-                            print(f"Deepgram message: {msg}")
+                            logger.info(f"Deepgram message: {msg}")
                 except Exception as e:
-                    print(f"Deepgram receiver error: {e}")
+                    logger.error(f"Deepgram receiver error: {e}")
 
             # Run Deepgram receiver concurrently
             asyncio.create_task(receiver())
@@ -71,12 +79,12 @@ async def copilot_endpoint(websocket: WebSocket):
                     data = json.loads(message["text"])
                     
                     if data.get("type") == "clear_transcript":
-                        print("Clearing transcript buffer...")
+                        logger.info("Clearing transcript buffer...")
                         context_buffer = ""
                         continue
                         
                     if data.get("type") == "trigger_llm":
-                        print("Trigger received, querying LLM...")
+                        logger.info("Trigger received, querying LLM...")
                         resume_ctx = data.get("resume", "")
                         job_role = data.get("jobRole", "")
                         image_data = data.get("image", "")
@@ -110,7 +118,7 @@ async def copilot_endpoint(websocket: WebSocket):
                             {"role": "user", "content": user_content}
                         ]
 
-                        print("🚀 Request sent to OpenAI...")
+                        logger.info("🚀 Request sent to OpenAI...")
                         start_time = time.time()
                         first_token_time = None
 
@@ -126,7 +134,7 @@ async def copilot_endpoint(websocket: WebSocket):
                             if first_token_time is None:
                                 first_token_time = time.time()
                                 ttft = (first_token_time - start_time) * 1000
-                                print(f"⏱️  Time to First Token (TTFT): {ttft:.0f} ms")
+                                logger.info(f"⏱️  Time to First Token (TTFT): {ttft:.0f} ms")
 
                             content = chunk.choices[0].delta.content
                             if content:
@@ -142,7 +150,7 @@ async def copilot_endpoint(websocket: WebSocket):
                             generation_time = end_time - first_token_time
                             approx_tokens = len(full_answer) / 4 # ~4 chars per token
                             tps = approx_tokens / generation_time if generation_time > 0 else 0
-                            print(f"✅  Total Latency: {total_time:.0f} ms | Speed: {tps:.1f} tokens/sec")
+                            logger.info(f"✅  Total Latency: {total_time:.0f} ms | Speed: {tps:.1f} tokens/sec")
                         
                         context_buffer = ""
 
@@ -150,14 +158,14 @@ async def copilot_endpoint(websocket: WebSocket):
                     await dg_ws.send(message["bytes"])
                     
     except WebSocketDisconnect:
-        print("Client disconnected cleanly")
+        logger.info("Client disconnected cleanly")
     except RuntimeError as e:
         if "Cannot call" in str(e):
-            print("Client disconnected (RuntimeError)")
+            logger.info("Client disconnected (RuntimeError)")
         else:
-            print(f"RuntimeError: {e}")
+            logger.error(f"RuntimeError: {e}")
     except Exception as e:
-        print(f"Exception: {e}")
+        logger.error(f"Exception: {e}")
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
