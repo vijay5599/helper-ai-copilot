@@ -1,0 +1,21 @@
+
+
+Model name : GPT-4o-mini
+
+Deepgram transcript (final): What is GIL in
+Deepgram transcript (final): Python? Can you explain me?
+Trigger received, querying LLM...
+🚀 Request sent to OpenAI...
+⏱️  Time to First Token (TTFT): 1473 ms
+✅  Total Latency: 5284 ms | Speed: 76.4 tokens/sec
+
+############################################################################################################################################################
+
+Model name : GPT-4o
+Deepgram transcript (final): What is
+Deepgram transcript (final): GIL in Python?
+Deepgram transcript (final): Can you explain me?
+Trigger received, querying LLM...
+🚀 Request sent to OpenAI...
+⏱️  Time to First Token (TTFT): 2225 ms
+✅  Total Latency: 4917 ms | Speed: 150.6 tokens/sec

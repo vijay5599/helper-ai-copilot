@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
@@ -22,8 +23,9 @@ async def copilot_endpoint(websocket: WebSocket):
     await websocket.accept()
     context_buffer = ""
     print("Client connected to WebSocket")
-    deepgram_url = "wss://api.deepgram.com/v1/listen?model=nova-2&language=en-IN&smart_format=true&keepalive=true"
-    
+    # Using nova-2 with domain-specific keywords to heavily boost recognition of tech jargon
+    keywords = "&keywords=multithreading:2&keywords=backend:2&keywords=frontend:2&keywords=LLM:2&keywords=RAG:2&keywords=API:2&keywords=React:2"
+    deepgram_url = f"wss://api.deepgram.com/v1/listen?model=nova-2&language=en-IN&smart_format=true&keepalive=true{keywords}"
     try:
         # Using raw websockets instead of the SDK to avoid Python version compatibility issues
         async with websockets.connect(
@@ -108,8 +110,12 @@ async def copilot_endpoint(websocket: WebSocket):
                             {"role": "user", "content": user_content}
                         ]
 
+                        print("🚀 Request sent to OpenAI...")
+                        start_time = time.time()
+                        first_token_time = None
+
                         stream = await openai_client.chat.completions.create(
-                            model="gpt-4o",
+                            model="gpt-4o-mini",
                             messages=messages,
                             stream=True,
                             max_tokens=1000
@@ -117,6 +123,11 @@ async def copilot_endpoint(websocket: WebSocket):
                         
                         full_answer = ""
                         async for chunk in stream:
+                            if first_token_time is None:
+                                first_token_time = time.time()
+                                ttft = (first_token_time - start_time) * 1000
+                                print(f"⏱️  Time to First Token (TTFT): {ttft:.0f} ms")
+
                             content = chunk.choices[0].delta.content
                             if content:
                                 full_answer += content
@@ -124,6 +135,14 @@ async def copilot_endpoint(websocket: WebSocket):
                                     "type": "answer_chunk",
                                     "text": full_answer
                                 }))
+                        
+                        end_time = time.time()
+                        total_time = (end_time - start_time) * 1000
+                        if first_token_time:
+                            generation_time = end_time - first_token_time
+                            approx_tokens = len(full_answer) / 4 # ~4 chars per token
+                            tps = approx_tokens / generation_time if generation_time > 0 else 0
+                            print(f"✅  Total Latency: {total_time:.0f} ms | Speed: {tps:.1f} tokens/sec")
                         
                         context_buffer = ""
 
