@@ -96,12 +96,18 @@ async def copilot_endpoint(websocket: WebSocket):
                             }))
                             continue
 
-                        # Use v5 (Candidate Roleplay / Script Mode)
-                        system_message = get_system_prompt("v5", job_role, resume_ctx)
+                        # Single-stage fast generation
+                        system_message = get_system_prompt("v6", job_role, resume_ctx)
 
                         user_content = []
                         if context_buffer.strip():
-                            user_content.append({"type": "text", "text": f"Current interview transcript:\n{context_buffer}"})
+                            query_text = context_buffer.strip()
+                            chat_history = data.get("history", [])
+                            if chat_history:
+                                last_q = chat_history[-1].get("question", "")
+                                if last_q:
+                                    query_text += f" (Context hint: The user is asking a follow-up about the exact topic of their previous question: '{last_q}')"
+                            user_content.append({"type": "text", "text": query_text})
                         else:
                             user_content.append({"type": "text", "text": "No transcript available. Analyze the screen and provide guidance."})
 
@@ -114,14 +120,23 @@ async def copilot_endpoint(websocket: WebSocket):
                             })
 
                         messages = [
-                            {"role": "system", "content": system_message},
-                            {"role": "user", "content": user_content}
+                            {"role": "system", "content": system_message}
                         ]
 
-                        logger.info("🚀 Request sent to OpenAI...")
+                        chat_history = data.get("history", [])
+                        # Keep only the last 5 interactions in memory to save tokens and maintain speed
+                        recent_history = chat_history[-5:]
+                        for item in recent_history:
+                            if item.get("question") and item.get("answer"):
+                                messages.append({"role": "user", "content": item["question"]})
+                                messages.append({"role": "assistant", "content": item["answer"]})
+
+                        messages.append({"role": "user", "content": user_content})
+
+                        logger.info("🚀 Stage 2 Request sent to OpenAI...")
                         start_time = time.time()
                         first_token_time = None
-
+                        print(messages)
                         stream = await openai_client.chat.completions.create(
                             model="gpt-4o-mini",
                             messages=messages,
