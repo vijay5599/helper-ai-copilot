@@ -69,108 +69,125 @@ async def copilot_endpoint(websocket: WebSocket):
                 except Exception as e:
                     logger.error(f"Deepgram receiver error: {e}")
 
-            # Run Deepgram receiver concurrently
-            asyncio.create_task(receiver())
+            # Run Deepgram receiver and keep_alive tasks concurrently
+            receiver_task = asyncio.create_task(receiver())
 
-            while True:
-                message = await websocket.receive()
+            async def keep_alive():
+                try:
+                    while True:
+                        await asyncio.sleep(5)
+                        logger.info("Sending KeepAlive to Deepgram...")
+                        await dg_ws.send(json.dumps({"type": "KeepAlive"}))
+                except asyncio.CancelledError:
+                    pass
+                except Exception as ke_err:
+                    logger.error(f"Deepgram keep-alive error: {ke_err}")
 
-                if "text" in message:
-                    data = json.loads(message["text"])
-                    
-                    if data.get("type") == "clear_transcript":
-                        logger.info("Clearing transcript buffer...")
-                        context_buffer = ""
-                        continue
+            keep_alive_task = asyncio.create_task(keep_alive())
+
+            try:
+                while True:
+                    message = await websocket.receive()
+
+                    if "text" in message:
+                        data = json.loads(message["text"])
                         
-                    if data.get("type") == "trigger_llm":
-                        logger.info("Trigger received, querying LLM...")
-                        resume_ctx = data.get("resume", "")
-                        job_role = data.get("jobRole", "")
-                        image_data = data.get("image", "")
-
-                        if not context_buffer.strip() and not image_data:
-                            await websocket.send_text(json.dumps({
-                                "type": "answer_chunk",
-                                "text": "Waiting for enough transcript context or screen image..."
-                            }))
+                        if data.get("type") == "clear_transcript":
+                            logger.info("Clearing transcript buffer...")
+                            context_buffer = ""
                             continue
+                            
+                        if data.get("type") == "trigger_llm":
+                            logger.info("Trigger received, querying LLM...")
+                            resume_ctx = data.get("resume", "")
+                            job_role = data.get("jobRole", "")
+                            image_data = data.get("image", "")
 
-                        # Single-stage fast generation
-                        system_message = get_system_prompt("v6", job_role, resume_ctx)
-
-                        user_content = []
-                        if context_buffer.strip():
-                            query_text = context_buffer.strip()
-                            chat_history = data.get("history", [])
-                            if chat_history:
-                                last_q = chat_history[-1].get("question", "")
-                                if last_q:
-                                    query_text += f" (Context hint: The user is asking a follow-up about the exact topic of their previous question: '{last_q}')"
-                            user_content.append({"type": "text", "text": query_text})
-                        else:
-                            user_content.append({"type": "text", "text": "No transcript available. Analyze the screen and provide guidance."})
-
-                        if image_data:
-                            user_content.append({
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": image_data
-                                }
-                            })
-
-                        messages = [
-                            {"role": "system", "content": system_message}
-                        ]
-
-                        chat_history = data.get("history", [])
-                        # Keep only the last 5 interactions in memory to save tokens and maintain speed
-                        recent_history = chat_history[-5:]
-                        for item in recent_history:
-                            if item.get("question") and item.get("answer"):
-                                messages.append({"role": "user", "content": item["question"]})
-                                messages.append({"role": "assistant", "content": item["answer"]})
-
-                        messages.append({"role": "user", "content": user_content})
-
-                        logger.info("🚀 Stage 2 Request sent to OpenAI...")
-                        start_time = time.time()
-                        first_token_time = None
-                        print(messages)
-                        stream = await openai_client.chat.completions.create(
-                            model="gpt-4o-mini",
-                            messages=messages,
-                            stream=True,
-                            max_tokens=1000
-                        )
-                        
-                        full_answer = ""
-                        async for chunk in stream:
-                            if first_token_time is None:
-                                first_token_time = time.time()
-                                ttft = (first_token_time - start_time) * 1000
-                                logger.info(f"⏱️  Time to First Token (TTFT): {ttft:.0f} ms")
-
-                            content = chunk.choices[0].delta.content
-                            if content:
-                                full_answer += content
+                            if not context_buffer.strip() and not image_data:
                                 await websocket.send_text(json.dumps({
                                     "type": "answer_chunk",
-                                    "text": full_answer
+                                    "text": "Waiting for enough transcript context or screen image..."
                                 }))
-                        
-                        end_time = time.time()
-                        total_time = (end_time - start_time) * 1000
-                        if first_token_time:
-                            generation_time = end_time - first_token_time
-                            approx_tokens = len(full_answer) / 4 # ~4 chars per token
-                            tps = approx_tokens / generation_time if generation_time > 0 else 0
-                            logger.info(f"✅  Total Latency: {total_time:.0f} ms | Speed: {tps:.1f} tokens/sec")
-                        
-                        context_buffer = ""
+                                continue
 
-                elif "bytes" in message:
-                    await dg_ws.send(message["bytes"])
+                            # Single-stage fast generation
+                            system_message = get_system_prompt("v6", job_role, resume_ctx)
+
+                            user_content = []
+                            if context_buffer.strip():
+                                query_text = context_buffer.strip()
+                                chat_history = data.get("history", [])
+                                if chat_history:
+                                    last_q = chat_history[-1].get("question", "")
+                                    if last_q:
+                                        query_text += f" (Context hint: The user is asking a follow-up about the exact topic of their previous question: '{last_q}')"
+                                user_content.append({"type": "text", "text": query_text})
+                            else:
+                                user_content.append({"type": "text", "text": "No transcript available. Analyze the screen and provide guidance."})
+
+                            if image_data:
+                                user_content.append({
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": image_data
+                                    }
+                                })
+
+                            messages = [
+                                {"role": "system", "content": system_message}
+                            ]
+
+                            chat_history = data.get("history", [])
+                            # Keep only the last 5 interactions in memory to save tokens and maintain speed
+                            recent_history = chat_history[-5:]
+                            for item in recent_history:
+                                if item.get("question") and item.get("answer"):
+                                    messages.append({"role": "user", "content": item["question"]})
+                                    messages.append({"role": "assistant", "content": item["answer"]})
+
+                            messages.append({"role": "user", "content": user_content})
+
+                            logger.info("🚀 Stage 2 Request sent to OpenAI...")
+                            start_time = time.time()
+                            first_token_time = None
+                            print(messages)
+                            stream = await openai_client.chat.completions.create(
+                                model="gpt-4o-mini",
+                                messages=messages,
+                                stream=True,
+                                max_tokens=1000
+                            )
+                            
+                            full_answer = ""
+                            async for chunk in stream:
+                                if first_token_time is None:
+                                    first_token_time = time.time()
+                                    ttft = (first_token_time - start_time) * 1000
+                                    logger.info(f"⏱️  Time to First Token (TTFT): {ttft:.0f} ms")
+
+                                content = chunk.choices[0].delta.content
+                                if content:
+                                    full_answer += content
+                                    await websocket.send_text(json.dumps({
+                                        "type": "answer_chunk",
+                                        "text": full_answer
+                                    }))
+                            
+                            end_time = time.time()
+                            total_time = (end_time - start_time) * 1000
+                            if first_token_time:
+                                generation_time = end_time - first_token_time
+                                approx_tokens = len(full_answer) / 4 # ~4 chars per token
+                                tps = approx_tokens / generation_time if generation_time > 0 else 0
+                                logger.info(f"✅  Total Latency: {total_time:.0f} ms | Speed: {tps:.1f} tokens/sec")
+                            
+                            context_buffer = ""
+
+                    elif "bytes" in message:
+                        await dg_ws.send(message["bytes"])
+            finally:
+                receiver_task.cancel()
+                keep_alive_task.cancel()
                     
     except WebSocketDisconnect:
         logger.info("Client disconnected cleanly")
