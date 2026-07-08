@@ -138,12 +138,14 @@ async def copilot_endpoint(websocket: WebSocket):
                             ]
 
                             chat_history = data.get("history", [])
-                            # Keep only the last 5 interactions in memory to save tokens and maintain speed
-                            recent_history = chat_history[-5:]
+                            # Keep only the last 2 interactions in memory to save tokens and maintain speed
+                            recent_history = chat_history[-2:]
                             for item in recent_history:
                                 if item.get("question") and item.get("answer"):
                                     messages.append({"role": "user", "content": item["question"]})
-                                    messages.append({"role": "assistant", "content": item["answer"]})
+                                    # Truncate previous answers to keep context small and fast
+                                    truncated_ans = item["answer"][:300] + "..." if len(item["answer"]) > 300 else item["answer"]
+                                    messages.append({"role": "assistant", "content": truncated_ans})
 
                             messages.append({"role": "user", "content": user_content})
 
