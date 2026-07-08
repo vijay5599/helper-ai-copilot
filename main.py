@@ -20,6 +20,12 @@ load_dotenv()
 
 app = FastAPI()
 openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+groq_client = None
+if os.getenv("GROQ_API_KEY"):
+    groq_client = AsyncOpenAI(
+        api_key=os.getenv("GROQ_API_KEY"),
+        base_url="https://api.groq.com/openai/v1"
+    )
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 
 @app.get("/")
@@ -100,6 +106,12 @@ async def copilot_endpoint(websocket: WebSocket):
                         if data.get("type") == "trigger_llm":
                             logger.info("Trigger received, querying LLM...")
                             resume_ctx = data.get("resume", "")
+                            print(len(resume_ctx), "len")
+                            # Truncate resume context to max 15000 characters (~3750 tokens) to fit Groq's 12k TPM free tier limit while allowing large resumes
+                            if len(resume_ctx) > 15000:
+                                logger.info("Truncating massive resume context to prevent API rate limits...")
+                                resume_ctx = resume_ctx[:15000] + "...\n[TRUNCATED TO SAVE TOKENS]"
+                            print(len(resume_ctx), "newwwwwwwww")
                             job_role = data.get("jobRole", "")
                             image_data = data.get("image", "")
 
@@ -149,16 +161,28 @@ async def copilot_endpoint(websocket: WebSocket):
 
                             messages.append({"role": "user", "content": user_content})
 
-                            logger.info("🚀 Stage 2 Request sent to OpenAI...")
                             start_time = time.time()
                             first_token_time = None
-                            print(messages)
-                            stream = await openai_client.chat.completions.create(
-                                model="gpt-4o-mini",
-                                messages=messages,
-                                stream=True,
-                                max_tokens=1000
-                            )
+                            
+                            # Use Groq if available, unless there's an image (Groq text models don't support image_url perfectly yet)
+                            use_groq = os.getenv("USE_GROQ", "true").lower() == "true" and groq_client is not None
+                            
+                            if use_groq and not image_data:
+                                logger.info("🚀 Request sent to Groq (llama-3.3-70b-versatile)...")
+                                stream = await groq_client.chat.completions.create(
+                                    model="llama-3.3-70b-versatile",
+                                    messages=messages,
+                                    stream=True,
+                                    max_tokens=1000
+                                )
+                            else:
+                                logger.info(f"🚀 Request sent to OpenAI (gpt-4o-mini)... Image present: {bool(image_data)}")
+                                stream = await openai_client.chat.completions.create(
+                                    model="gpt-4o-mini",
+                                    messages=messages,
+                                    stream=True,
+                                    max_tokens=1000
+                                )
                             
                             full_answer = ""
                             async for chunk in stream:
