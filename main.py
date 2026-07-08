@@ -168,13 +168,22 @@ async def copilot_endpoint(websocket: WebSocket):
                             use_groq = os.getenv("USE_GROQ", "true").lower() == "true" and groq_client is not None
                             
                             if use_groq and not image_data:
-                                logger.info("🚀 Request sent to Groq (llama-3.3-70b-versatile)...")
-                                stream = await groq_client.chat.completions.create(
-                                    model="llama-3.3-70b-versatile",
-                                    messages=messages,
-                                    stream=True,
-                                    max_tokens=1000
-                                )
+                                logger.info("🚀 Request sent to Groq (llama-3.1-8b-instant)...")
+                                try:
+                                    stream = await groq_client.chat.completions.create(
+                                        model="llama-3.1-8b-instant",
+                                        messages=messages,
+                                        stream=True,
+                                        max_tokens=1000
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"⚠️ Groq request failed ({e}). Falling back to OpenAI (gpt-4o-mini)...")
+                                    stream = await openai_client.chat.completions.create(
+                                        model="gpt-4o-mini",
+                                        messages=messages,
+                                        stream=True,
+                                        max_tokens=1000
+                                    )
                             else:
                                 logger.info(f"🚀 Request sent to OpenAI (gpt-4o-mini)... Image present: {bool(image_data)}")
                                 stream = await openai_client.chat.completions.create(
