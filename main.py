@@ -39,7 +39,7 @@ async def copilot_endpoint(websocket: WebSocket):
     context_buffer = ""
     logger.info("Client connected to WebSocket")
     # Using nova-2 with domain-specific keywords to heavily boost recognition of tech jargon
-    keywords = "&keywords=multithreading:2&keywords=backend:2&keywords=frontend:2&keywords=LLM:2&keywords=RAG:2&keywords=API:2&keywords=React:2&keywords=FastAPI:2&keywords=type%20hints:2"
+    keywords = "&keywords=multithreading:2&keywords=backend:2&keywords=frontend:2&keywords=LLM:2&keywords=RAG:2&keywords=API:2&keywords=React:2&keywords=FastAPI:2&keywords=type%20hints:2&keywords=Pydantic:2&keywords=BaseModel:2"
     deepgram_url = f"wss://api.deepgram.com/v1/listen?model=nova-2&language=en-IN&smart_format=true&keepalive=true{keywords}"
     try:
         # Using raw websockets instead of the SDK to avoid Python version compatibility issues
