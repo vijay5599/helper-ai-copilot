@@ -24,7 +24,8 @@ groq_client = None
 if os.getenv("GROQ_API_KEY"):
     groq_client = AsyncOpenAI(
         api_key=os.getenv("GROQ_API_KEY"),
-        base_url="https://api.groq.com/openai/v1"
+        base_url="https://api.groq.com/openai/v1",
+        max_retries=0
     )
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 
