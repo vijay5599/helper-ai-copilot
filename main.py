@@ -3,6 +3,7 @@ import json
 import asyncio
 import time
 import logging
+import urllib.parse
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
@@ -39,7 +40,59 @@ async def copilot_endpoint(websocket: WebSocket):
     context_buffer = ""
     logger.info("Client connected to WebSocket")
     # Using nova-2 with domain-specific keywords to heavily boost recognition of tech jargon
-    keywords = "&keywords=multithreading:2&keywords=backend:2&keywords=frontend:2&keywords=LLM:2&keywords=RAG:2&keywords=API:2&keywords=React:2&keywords=FastAPI:2&keywords=type%20hints:2&keywords=Pydantic:2&keywords=BaseModel:2&keywords=CORS:2&keywords=Node.js:2&keywords=LoRA:2&keywords=fine-tuning:2&keywords=zero-shot:2&keywords=few-shot:2&keywords=vector%20database:2&keywords=Chain-of-Thought:2&keywords=CORS&keywords=hallucination:2&keywords=Hugging%20Face:2&keywords=semantic%20search:2&keywords=ChromaDB:2&keywords=LangGraph:2&keywords=LangChain:2&keywords=LiteLLM:2&keywords=qTest:2&keywords=NetApp:2&keywords=Graphene:2&keywords=Next.js:2&keywords=Redux:2&keywords=DevOps:2&keywords=CI/CD:2"
+    keyword_list = [
+        # Original & Resume Jargon
+        "multithreading", "backend", "frontend", "LLM", "RAG", "API", 
+        "React", "FastAPI", "type hints", "Pydantic", "BaseModel", "CORS", 
+        "Node.js", "LoRA", "fine-tuning", "zero-shot", "few-shot", "vector database", 
+        "Chain-of-Thought", "CoT", "hallucination", "Hugging Face", "semantic search", 
+        "ChromaDB", "LangGraph", "LangChain", "LiteLLM", "qTest", "NetApp", 
+        "Graphene", "Next.js", "Redux", "DevOps", "CI/CD",
+        # GenAI Developer Jargon
+        "ChatGPT", "Anthropic", "Llama", "Mistral", "Langfuse", "vLLM", 
+        "quantization", "chunking", "embeddings", "Prompt Engineering", 
+        "ROUGE", "BLEU", "FAISS", "Qdrant", "Pinecone", "Agentic", "CrewAI", "AutoGen",
+        # Full Stack Developer Jargon
+        "PostgreSQL", "MongoDB", "Redis", "Kafka", "GraphQL", "WebSockets", 
+        "Kubernetes", "Tailwind", "Zustand", "Vite", "OAuth", "JWT", 
+        "Nginx", "SQLAlchemy", "Prisma", "ORM",
+        # Frontend & React Ecosystem
+        "Context API", "useEffect", "useState", "useMemo", "useCallback", 
+        "Virtual DOM", "React Router", "Next.js App Router", "Server Components", 
+        "Client Components", "hydration", "memoization", "lazy loading", 
+        "Redux Thunk", "Redux Saga", "Redux Toolkit", "RTK", "React Query", 
+        "TanStack", "Material UI", "MUI", "Framer Motion", "Webpack", "Babel",
+        # Node.js Ecosystem
+        "Event Loop", "libuv", "V8 engine", "Call Stack", "Microtask Queue", 
+        "Macrotask Queue", "Worker Threads", "Child Processes", "streams", 
+        "EventEmitter", "middleware", "Express", "NestJS", "CommonJS", "ESM",
+        # Next.js Ecosystem
+        "SSR", "SSG", "ISR", "CSR", "App Router", "Pages Router", 
+        "getStaticProps", "getServerSideProps", "Server Actions", 
+        "Code Splitting", "Image Optimization",
+        # Python & FastAPI Ecosystem
+        "FastAPI", "uvicorn", "Pydantic", "SQLAlchemy", "Alembic", 
+        "asyncio", "event loop", "FastAPI cors", "response_model",
+        # LangChain Ecosystem
+        "LangChain Expression Language", "LCEL", "Runnable", "PromptTemplate", 
+        "Chroma", "OpenAIEmbeddings", "ColBERT", "Momentum Black", 
+        "ChatPromptTemplate", "MessagesPlaceholder", "StrOutputParser",
+        # Deployment & DevOps
+        "Docker", "docker-compose", "GitHub Actions", "GitLab CI", "Azure DevOps",
+        "CI/CD pipeline", "deployment", "automation", "Azure App Service",
+        # Databases & Storage
+        "PostgreSQL", "MySQL", "Chroma", "OpenSearch", "Supabase",
+        "Azure Blob Storage", "Cloud Storage", "data persistence",
+        # AI/ML Concepts
+        "Retrieval Augmented Generation", "zero-shot prompting", "few-shot prompting",
+        "fine-tuning", "parameter-efficient fine-tuning", "PEFT", "LoRA",
+        "quantization", "QLoRA", "embeddings", "vector database", "semantic search",
+        # Prompt Engineering
+        "prompt engineering", "few-shot prompting", "zero-shot prompting",
+        "instruction following", "Chain-of-Thought", "CoT", "role-playing",
+        
+    ]
+    keywords = "".join([f"&keywords={urllib.parse.quote(k)}:2" for k in keyword_list])
     deepgram_url = f"wss://api.deepgram.com/v1/listen?model=nova-2&language=en-IN&smart_format=true&keepalive=true{keywords}"
     try:
         # Using raw websockets instead of the SDK to avoid Python version compatibility issues
