@@ -153,6 +153,7 @@ def get_system_prompt(version: str, job_role: str, resume_ctx: str) -> str:
             f"====================================================\n\n"
             f"When explaining ANY technical concept (e.g. 'What is X?'), structure your answer EXACTLY like this using bold headings:\n\n"
             f"**Summary**: 1 sentence.\n"
+            f"**Definition**: What is X?\n"
             f"**Why it exists**: The main problem it solves.\n"
             f"**How it works**: A brief explanation of the mechanics.\n"
             f"**Code Example**: ALWAYS include a short, practical markdown code block for programming concepts (e.g., decorators, hooks, event loop).\n\n"
