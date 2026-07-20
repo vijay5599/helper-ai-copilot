@@ -91,86 +91,41 @@ async def copilot_endpoint(websocket: WebSocket):
         "prompt engineering", "few-shot prompting", "zero-shot prompting",
         "instruction following", "Chain-of-Thought", "CoT", "role-playing",
     ]
-    keywords = "".join([f"&keywords={urllib.parse.quote(k)}:2" for k in keyword_list])
-    deepgram_url = f"wss://api.deepgram.com/v1/listen?model=nova-2&language=en-IN&smart_format=true{keywords}"
-    dg_ws = None
-    dg_connected = False
+    audio_buffer = bytearray()
 
-    async def deepgram_runner():
-        nonlocal dg_ws, dg_connected, context_buffer
+    async def whisper_runner():
+        nonlocal context_buffer, audio_buffer
         while True:
             try:
-                if not dg_connected:
-                    logger.info("Connecting to Deepgram API directly...")
-                    dg_ws = await websockets.connect(
-                        deepgram_url,
-                        extra_headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"}
-                    )
-                    dg_connected = True
-                    logger.info("Connected to Deepgram API directly")
-                    await websocket.send_text(json.dumps({"type": "restart_audio"}))
-                
-                try:
-                    async for dg_message in dg_ws:
-                        msg = json.loads(dg_message)
-                        if msg.get("type") == "Results":
-                            is_final = msg.get("is_final", False)
-                            sentence = msg["channel"]["alternatives"][0].get("transcript", "")
-                            
-                            if sentence and is_final:
-                                logger.info(f"Deepgram transcript (final): {sentence}")
-                                context_buffer += sentence + " "
-                                await websocket.send_text(json.dumps({
-                                    "type": "transcript",
-                                    "text": context_buffer
-                                }))
-                            elif sentence:
-                                # Send intermediate results without permanently adding to buffer
-                                await websocket.send_text(json.dumps({
-                                    "type": "transcript",
-                                    "text": context_buffer + sentence
-                                }))
-                        else:
-                            logger.info(f"Deepgram message: {msg}")
-                finally:
-                    dg_connected = False
-                    if dg_ws:
-                        try:
-                            await dg_ws.close()
-                        except Exception:
-                            pass
-                    logger.info("Deepgram connection cleanup complete.")
-                    await asyncio.sleep(2)
+                await asyncio.sleep(3)  # Chunking interval
+                if len(audio_buffer) > 0:
+                    try:
+                        logger.info("Sending audio chunk to OpenAI Whisper API...")
+                        transcript = await openai_client.audio.transcriptions.create(
+                            model="whisper-1",
+                            file=("audio.webm", bytes(audio_buffer), "audio/webm"),
+                            language="en"
+                        )
+                        if transcript.text:
+                            logger.info(f"Whisper transcript: {transcript.text}")
+                            context_buffer = transcript.text
+                            await websocket.send_text(json.dumps({
+                                "type": "transcript",
+                                "text": context_buffer
+                            }))
+                    except Exception as e:
+                        logger.error(f"Whisper transcription error: {e}")
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Deepgram connection error: {e}. Reconnecting to Deepgram in 2s...")
-                await asyncio.sleep(2)
-
-    async def keep_alive():
-        nonlocal dg_ws, dg_connected
-        try:
-            while True:
-                await asyncio.sleep(5)
-                if dg_connected and dg_ws:
-                    try:
-                        logger.info("Sending KeepAlive to Deepgram...")
-                        await dg_ws.send(json.dumps({"type": "KeepAlive"}))
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as ke_err:
-                        logger.error(f"Deepgram keep-alive error: {ke_err}")
-        except asyncio.CancelledError:
-            pass
+                logger.error(f"Whisper runner error: {e}")
 
     runner_task = None
-    keep_alive_task = None
     audio_chunks_received = 0
 
     try:
         # Start the concurrent tasks
-        runner_task = asyncio.create_task(deepgram_runner())
-        keep_alive_task = asyncio.create_task(keep_alive())
+        runner_task = asyncio.create_task(whisper_runner())
 
         while True:
             message = await websocket.receive()
@@ -297,19 +252,21 @@ async def copilot_endpoint(websocket: WebSocket):
                         logger.info(f"✅  Total Latency: {total_time:.0f} ms | Speed: {tps:.1f} tokens/sec")
                     
                     context_buffer = ""
+                    audio_buffer.clear()
 
             elif "bytes" in message:
+                chunk = message["bytes"]
+                if chunk.startswith(b"\x1a\x45\xdf\xa3"):
+                    logger.info("New WebM stream detected! Clearing audio buffer.")
+                    audio_buffer.clear()
+                    context_buffer = ""
+                
+                audio_buffer.extend(chunk)
                 audio_chunks_received += 1
                 if audio_chunks_received == 1:
                     logger.info("Received first audio chunk from client!")
                 elif audio_chunks_received % 100 == 0:
                     logger.info(f"Received {audio_chunks_received} audio chunks from client.")
-
-                if dg_connected and dg_ws:
-                    try:
-                        await dg_ws.send(message["bytes"])
-                    except Exception as send_err:
-                        logger.error(f"Error sending audio to Deepgram: {send_err}")
     except WebSocketDisconnect:
         logger.info("Client disconnected cleanly")
     except RuntimeError as e:
@@ -322,13 +279,6 @@ async def copilot_endpoint(websocket: WebSocket):
     finally:
         if runner_task:
             runner_task.cancel()
-        if keep_alive_task:
-            keep_alive_task.cancel()
-        if dg_ws:
-            try:
-                await dg_ws.close()
-            except Exception:
-                pass
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
