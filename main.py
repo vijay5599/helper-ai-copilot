@@ -257,17 +257,17 @@ async def copilot_endpoint(websocket: WebSocket):
                                 max_tokens=1000
                             )
                         except Exception as e:
-                            logger.warning(f"⚠️ Groq request failed ({e}). Falling back to OpenAI (gpt-4o-mini)...")
+                            logger.warning(f"⚠️ Groq request failed ({e}). Falling back to OpenAI (gpt-4o)...")
                             stream = await openai_client.chat.completions.create(
-                                model="gpt-4o-mini",
+                                model="gpt-4o",
                                 messages=messages,
                                 stream=True,
                                 max_tokens=1000
                             )
                     else:
-                        logger.info(f"🚀 Request sent to OpenAI (gpt-4o-mini)... Image present: {bool(image_data)}")
+                        logger.info(f"🚀 Request sent to OpenAI (gpt-4o)... Image present: {bool(image_data)}")
                         stream = await openai_client.chat.completions.create(
-                            model="gpt-4o-mini",
+                            model="gpt-4o",
                             messages=messages,
                             stream=True,
                             max_tokens=1000
